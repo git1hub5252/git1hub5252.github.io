@@ -1,0 +1,2225 @@
+<!DOCTYPE html>
+
+<html lang="ko">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>해전 시뮬레이터 (Battleship Grid Arena)</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+KR:wght@300;400;700&display=swap');
+
+    
+
+    body {
+
+      font-family: 'Noto Sans KR', sans-serif;
+
+      background-color: #0b0f19;
+
+      color: #e2e8f0;
+
+    }
+
+    .font-digital {
+
+      font-family: 'Orbitron', sans-serif;
+
+    }
+
+    .radar-sweep {
+
+      position: relative;
+
+      overflow: hidden;
+
+    }
+
+    .radar-sweep::after {
+
+      content: '';
+
+      position: absolute;
+
+      top: -50%;
+
+      left: -50%;
+
+      width: 200%;
+
+      height: 200%;
+
+      background: conic-gradient(from 0deg, rgba(16, 185, 129, 0.15) 0deg, rgba(16, 185, 129, 0) 90deg, rgba(16, 185, 129, 0) 360deg);
+
+      animation: sweep 4s linear infinite;
+
+      pointer-events: none;
+
+    }
+
+    @keyframes sweep {
+
+      from { transform: rotate(0deg); }
+
+      to { transform: rotate(360deg); }
+
+    }
+
+    .grid-cell {
+
+      aspect-ratio: 1 / 1;
+
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    }
+
+    /* 해상 화염 애니메이션 효과 */
+
+    @keyframes burn {
+
+      0%, 100% { background-color: #ef4444; box-shadow: 0 0 10px #f97316; }
+
+      50% { background-color: #f97316; box-shadow: 0 0 20px #ef4444; }
+
+    }
+
+    .cell-hit {
+
+      animation: burn 1.2s infinite ease-in-out;
+
+    }
+
+  </style>
+
+</head>
+
+<body class="min-h-screen flex flex-col justify-between overflow-x-hidden">
+
+  <!-- 메인 헤더 & 상태 판넬 -->
+
+  <header class="border-b border-cyan-900 bg-slate-950 p-4 sticky top-0 z-50 shadow-lg">
+
+    <div class="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
+
+      <div class="flex items-center gap-3">
+
+        <div class="w-10 h-10 bg-cyan-500 rounded flex items-center justify-center animate-pulse">
+
+          <i class="fa-solid fa-anchor text-slate-950 text-xl"></i>
+
+        </div>
+
+        <div>
+
+          <h1 class="text-xl font-black tracking-wider text-cyan-400 font-digital">GRID ARENA</h1>
+
+          <p class="text-xs text-slate-400">4x4 Battleship Strategy & Tactics</p>
+
+        </div>
+
+      </div>
+
+      <!-- 오디오 컨트롤 & 사운드 상태 -->
+
+      <div class="flex items-center gap-4">
+
+        <button id="bgm-toggle" class="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-xs flex items-center gap-2 border border-slate-700 transition-all">
+
+          <i class="fa-solid fa-volume-high text-cyan-400" id="bgm-icon"></i>
+
+          <span id="bgm-status">오디오 시스템 활성화</span>
+
+        </button>
+
+        <div class="text-right">
+
+          <span class="text-xs text-slate-400 uppercase tracking-widest block">SYSTEM STATE</span>
+
+          <span id="current-turn-badge" class="font-digital text-sm font-bold text-emerald-400 px-2 py-0.5 bg-emerald-950/40 border border-emerald-900/50 rounded">LOBBY</span>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </header>
+
+  <!-- 메인 레이아웃 -->
+
+  <main class="flex-grow max-w-4xl w-full mx-auto p-4 flex flex-col justify-center gap-6">
+
+    
+
+    <!-- 로비 화면 -->
+
+    <div id="lobby-panel" class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 sm:p-10 text-center max-w-lg mx-auto w-full shadow-2xl backdrop-blur-md">
+
+      <div class="mb-6">
+
+        <i class="fa-solid fa-ship text-6xl text-cyan-500 mb-4 animate-bounce"></i>
+
+        <h2 class="text-2xl sm:text-3xl font-black text-white font-digital tracking-wide">BATTLESHIP SIMULATOR</h2>
+
+        <p class="text-slate-400 text-sm mt-2 max-w-xs mx-auto leading-relaxed">
+
+          4x4 격자 전장에서 벌어지는 고도의 전술 심리전. 함선 2척을 격파하고 바다의 주권을 장악하십시오.
+
+        </p>
+
+      </div>
+
+      
+
+      <div class="bg-slate-950/80 p-4 rounded-xl text-left border border-slate-800 text-xs space-y-2 mb-6 text-slate-300">
+
+        <p class="font-bold text-cyan-400 text-center mb-1 font-digital">★ GAME TACTICAL MANUAL</p>
+
+        <p>• 플레이어와 AI는 각각 4x4 바다에 함선 <strong class="text-amber-400">2척(1칸 크기)</strong>을 무작위로 배치합니다.</p>
+
+        <p>• <strong class="text-emerald-400">레이더(1회)</strong>: 십자형 5칸을 탐색하지만 턴을 소비하지 않습니다.</p>
+
+        <p>• <strong class="text-rose-400">어뢰 폭격(1회)</strong>: 가로 1개 행(4칸) 전체를 한 번에 무차별 포격합니다.</p>
+
+        <p>• 웹 오디오 기반 실시간 합성 BGM 및 오디오 덕킹 시스템 지원.</p>
+
+      </div>
+
+      <button id="start-btn" class="w-full py-4 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-black rounded-xl shadow-lg shadow-cyan-900/50 hover:shadow-cyan-500/30 transition-all text-lg font-digital tracking-widest">
+
+        ENGAGE ENGINE (전투 개시)
+
+      </button>
+
+    </div>
+
+    <!-- 인게임 화면 -->
+
+    <div id="game-panel" class="hidden flex flex-col gap-6">
+
+      
+
+      <!-- 상단 스코어 / 스킬 패널 -->
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center bg-slate-950/80 border border-slate-800 p-4 rounded-xl">
+
+        <div class="text-center md:text-left">
+
+          <span class="text-xs text-slate-400 block font-digital tracking-wider">ALLY FLEET STATUS</span>
+
+          <div class="flex justify-center md:justify-start items-center gap-2 mt-1">
+
+            <span class="text-lg font-bold font-digital text-cyan-400" id="player-ship-count">2</span>
+
+            <span class="text-slate-600">/</span>
+
+            <span class="text-sm text-slate-500">2 Ships</span>
+
+            <div id="player-ships-health-dots" class="flex gap-1 ml-2">
+
+              <span class="w-3 h-3 rounded-full bg-cyan-400"></span>
+
+              <span class="w-3 h-3 rounded-full bg-cyan-400"></span>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        
+
+        <!-- 중앙: 정보 안내창 -->
+
+        <div class="text-center py-2 px-4 rounded bg-slate-900 border border-slate-800">
+
+          <span id="game-info-log" class="text-xs text-cyan-300 font-medium">아군 기동대 대기 중. 적의 흔적을 수색하십시오.</span>
+
+        </div>
+
+        <div class="text-center md:text-right">
+
+          <span class="text-xs text-slate-400 block font-digital tracking-wider">ENEMY FLEET STATUS</span>
+
+          <div class="flex justify-center md:justify-end items-center gap-2 mt-1">
+
+            <span class="text-lg font-bold font-digital text-rose-400" id="ai-ship-count">2</span>
+
+            <span class="text-slate-600">/</span>
+
+            <span class="text-sm text-slate-500">2 Ships</span>
+
+            <div id="ai-ships-health-dots" class="flex gap-1 ml-2">
+
+              <span class="w-3 h-3 rounded-full bg-rose-500"></span>
+
+              <span class="w-3 h-3 rounded-full bg-rose-500"></span>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- 특수 스킬 선택 UI -->
+
+      <div class="bg-slate-950/80 p-4 border border-slate-800 rounded-xl flex flex-col sm:flex-row justify-between items-center gap-4">
+
+        <div class="flex items-center gap-2">
+
+          <i class="fa-solid fa-circle-exclamation text-yellow-500 text-sm animate-pulse"></i>
+
+          <span class="text-xs text-slate-300">현재 턴에서 발동할 아군 전술 스킬을 선택하십시오:</span>
+
+        </div>
+
+        <div class="flex items-center gap-3 w-full sm:w-auto">
+
+          <!-- 레이더 버튼 -->
+
+          <button id="skill-radar-btn" class="flex-1 sm:flex-none py-2 px-4 rounded bg-slate-900 border border-slate-700 hover:border-emerald-500 hover:bg-emerald-950/20 text-slate-300 hover:text-emerald-400 text-xs font-bold flex items-center justify-center gap-2 transition-all">
+
+            <i class="fa-solid fa-satellite-dish"></i>
+
+            레이더 (<span id="radar-count">1</span>/1)
+
+          </button>
+
+          <!-- 어뢰 버튼 -->
+
+          <button id="skill-torpedo-btn" class="flex-1 sm:flex-none py-2 px-4 rounded bg-slate-900 border border-slate-700 hover:border-rose-500 hover:bg-rose-950/20 text-slate-300 hover:text-rose-400 text-xs font-bold flex items-center justify-center gap-2 transition-all">
+
+            <i class="fa-solid fa-bomb"></i>
+
+            어뢰 폭격 (<span id="torpedo-count">1</span>/1)
+
+          </button>
+
+        </div>
+
+      </div>
+
+      <!-- 양대 격자판 (플레이어 아군 바다 vs 적 공격용 바다) -->
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
+
+        
+
+        <!-- 왼쪽: 플레이어 해역 (아군 상태 확인판) -->
+
+        <div class="flex flex-col gap-2 p-4 bg-slate-950/60 border border-slate-800 rounded-xl">
+
+          <div class="flex justify-between items-center mb-1">
+
+            <h3 class="text-sm font-bold text-cyan-400 flex items-center gap-2">
+
+              <i class="fa-solid fa-shield-halved"></i> 아군 해역 (ALLY WATER)
+
+            </h3>
+
+            <span class="text-[10px] text-slate-500 uppercase tracking-widest font-digital">Self Defense Radar</span>
+
+          </div>
+
+          <!-- 4x4 Grid -->
+
+          <div class="grid grid-cols-4 gap-2 bg-slate-900 p-2 rounded-lg border border-slate-800 relative" id="player-grid-container">
+
+            <!-- Dynamic cell insertion via JavaScript -->
+
+          </div>
+
+          <p class="text-[11px] text-slate-400 text-center mt-1">
+
+            * 내 함선의 실제 위치(<i class="fa-solid fa-ship text-cyan-400"></i>) 및 적군의 자동 사격 궤적이 표출됩니다.
+
+          </p>
+
+        </div>
+
+        <!-- 오른쪽: 적 해역 (플레이어의 주 무기 조준 및 발포판) -->
+
+        <div class="flex flex-col gap-2 p-4 bg-slate-950/60 border border-slate-800 rounded-xl relative" id="enemy-section">
+
+          <div class="flex justify-between items-center mb-1">
+
+            <h3 class="text-sm font-bold text-rose-400 flex items-center gap-2">
+
+              <i class="fa-solid fa-crosshairs"></i> 적 해역 (FIRE CONTROL SYSTEM)
+
+            </h3>
+
+            <span class="text-[10px] text-rose-500/80 uppercase tracking-widest font-digital">Target Acquisition</span>
+
+          </div>
+
+          <!-- 4x4 Grid -->
+
+          <div class="grid grid-cols-4 gap-2 bg-slate-900 p-2 rounded-lg border border-slate-800 relative radar-sweep" id="enemy-grid-container">
+
+            <!-- Dynamic cell insertion via JavaScript -->
+
+          </div>
+
+          <p class="text-[11px] text-slate-400 text-center mt-1">
+
+            * 타격할 셀을 직접 클릭하거나, 스킬 활성화 후 발동 좌표를 선택하십시오.
+
+          </p>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- 게임 결과 패널 (승리 / 패배 전광판) -->
+
+    <div id="gameover-panel" class="hidden bg-slate-900/80 border border-slate-700 rounded-2xl p-8 text-center max-w-md mx-auto w-full shadow-2xl relative">
+
+      <div id="gameover-icon-box" class="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+
+        <!-- JS Icon dynamically changes -->
+
+      </div>
+
+      <h2 id="gameover-title" class="text-3xl font-black font-digital tracking-wide">VICTORY</h2>
+
+      <p id="gameover-desc" class="text-slate-300 text-sm mt-3 mb-6 leading-relaxed">적 군함을 완벽하게 격침하여 해역의 통제권을 성공적으로 확보하였습니다.</p>
+
+      
+
+      <button id="restart-btn" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-cyan-400 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500 font-bold rounded-xl transition-all font-digital tracking-widest text-sm">
+
+        RE-ENGAGE (재전투 대기)
+
+      </button>
+
+    </div>
+
+  </main>
+
+  <!-- 하단 푸터 -->
+
+  <footer class="p-4 text-center border-t border-slate-900 text-[11px] text-slate-600 bg-slate-950/40">
+
+    <p>© 2026 Grid Arena Battleship. Built-in procedural Web Audio Synthesizer activated.</p>
+
+  </footer>
+
+  <!-- 오디오 합성 및 게임 핵심 비즈니스 로직 스크립트 -->
+
+  <script>
+
+    // ==========================================
+
+    // 1. 오디오 합성 & 연출 시스템 (Web Audio API)
+
+    // ==========================================
+
+    class SynthAudioManager {
+
+      constructor() {
+
+        this.ctx = null;
+
+        this.masterVolume = null;
+
+        this.bgmVolumeNode = null;
+
+        this.sfxVolumeNode = null;
+
+        
+
+        // BGM 채널 2개 (크로스페이드를 위한 더블 채널 설계)
+
+        this.bgmSource1 = null;
+
+        this.bgmSource2 = null;
+
+        this.bgmGain1 = null;
+
+        this.bgmGain2 = null;
+
+        this.activeBgmChannel = 0; // 0: 없음, 1: ch1, 2: ch2
+
+        
+
+        this.isPlaying = false;
+
+        this.duckingTimeout = null;
+
+        this.duckingInterval = null;
+
+        
+
+        // 주기적 오케스트라 펄스 및 전투 비트 시퀀서 루프 ID
+
+        this.bgmInterval1 = null;
+
+        this.bgmInterval2 = null;
+
+        this.currentStyle = ''; // 'lobby', 'battle', 'victory', 'defeat'
+
+      }
+
+      init() {
+
+        if (this.ctx) return;
+
+        // 웹 브라우저 호환 오디오 컨텍스트 획득
+
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+
+        this.ctx = new AudioContextClass();
+
+        
+
+        this.masterVolume = this.ctx.createGain();
+
+        this.masterVolume.gain.setValueAtTime(0.4, this.ctx.currentTime);
+
+        this.masterVolume.connect(this.ctx.destination);
+
+        // BGM 마스터 게인
+
+        this.bgmVolumeNode = this.ctx.createGain();
+
+        this.bgmVolumeNode.gain.setValueAtTime(0.7, this.ctx.currentTime);
+
+        this.bgmVolumeNode.connect(this.masterVolume);
+
+        // SFX 마스터 게인
+
+        this.sfxVolumeNode = this.ctx.createGain();
+
+        this.sfxVolumeNode.gain.setValueAtTime(0.9, this.ctx.currentTime);
+
+        this.sfxVolumeNode.connect(this.masterVolume);
+
+        // 채널 1 게인
+
+        this.bgmGain1 = this.ctx.createGain();
+
+        this.bgmGain1.gain.setValueAtTime(0, this.ctx.currentTime);
+
+        this.bgmGain1.connect(this.bgmVolumeNode);
+
+        // 채널 2 게인
+
+        this.bgmGain2 = this.ctx.createGain();
+
+        this.bgmGain2.gain.setValueAtTime(0, this.ctx.currentTime);
+
+        this.bgmGain2.connect(this.bgmVolumeNode);
+
+        this.isPlaying = true;
+
+      }
+
+      // 오디오 덕킹 시스템: 폭발 발생 시 BGM 게인을 순간 30%로 낮춘 뒤 서서히 100%로 회복
+
+      triggerDucking() {
+
+        if (!this.isPlaying || !this.ctx) return;
+
+        
+
+        // 기존 덕킹 타이머 및 애니메이션 초기화
+
+        if (this.duckingTimeout) clearTimeout(this.duckingTimeout);
+
+        
+
+        const now = this.ctx.currentTime;
+
+        // 볼륨 신속 감쇠
+
+        this.bgmVolumeNode.gain.cancelScheduledValues(now);
+
+        this.bgmVolumeNode.gain.setValueAtTime(this.bgmVolumeNode.gain.value, now);
+
+        this.bgmVolumeNode.gain.linearRampToValueAtTime(0.15, now + 0.1); // 순간 감쇠
+
+        // 1.2초 뒤 서서히 BGM 복구
+
+        this.duckingTimeout = setTimeout(() => {
+
+          const restoreTime = this.ctx.currentTime;
+
+          this.bgmVolumeNode.gain.linearRampToValueAtTime(0.7, restoreTime + 1.5);
+
+        }, 1200);
+
+      }
+
+      // ----------------------------------------------------
+
+      // 오리지널 무한 합성 루프 생성기 (BGM 합성 파트)
+
+      // ----------------------------------------------------
+
+      
+
+      // 로비: 웅장하고 엄숙한 오케스트라 패드 + 현악 느낌의 진동음
+
+      startLobbySynth() {
+
+        if (this.currentStyle === 'lobby') return;
+
+        this.stopAllBgmIntervals();
+
+        this.currentStyle = 'lobby';
+
+        
+
+        const targetGain = this.activeBgmChannel === 1 ? this.bgmGain2 : this.bgmGain1;
+
+        const oldGain = this.activeBgmChannel === 1 ? this.bgmGain1 : this.bgmGain2;
+
+        this.activeBgmChannel = this.activeBgmChannel === 1 ? 2 : 1;
+
+        // 크로스페이드 아웃/인
+
+        const now = this.ctx.currentTime;
+
+        oldGain.gain.linearRampToValueAtTime(0, now + 1.5);
+
+        targetGain.gain.setValueAtTime(0, now);
+
+        targetGain.gain.linearRampToValueAtTime(1.0, now + 1.5);
+
+        // 신속한 음역 순환으로 화음 느낌을 지속 연출
+
+        let step = 0;
+
+        const chords = [
+
+          [110, 165, 220, 275], // A minor-ish
+
+          [130, 195, 260, 325], // C Major-ish
+
+          [116, 174, 233, 291]  // G-ish / Bb-ish
+
+        ];
+
+        const playLobbyBeat = () => {
+
+          if (this.currentStyle !== 'lobby') return;
+
+          const chord = chords[step % chords.length];
+
+          step++;
+
+          chord.forEach((freq, idx) => {
+
+            const osc = this.ctx.createOscillator();
+
+            const gainNode = this.ctx.createGain();
+
+            
+
+            osc.type = idx === 0 ? 'sawtooth' : 'triangle';
+
+            osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+
+            
+
+            // 아련하고 웅장한 패드 연출
+
+            gainNode.gain.setValueAtTime(0, this.ctx.currentTime);
+
+            gainNode.gain.linearRampToValueAtTime(0.06 / chord.length, this.ctx.currentTime + 1.2);
+
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 3.8);
+
+            
+
+            osc.connect(gainNode);
+
+            gainNode.connect(targetGain);
+
+            
+
+            osc.start();
+
+            osc.stop(this.ctx.currentTime + 4.0);
+
+          });
+
+        };
+
+        playLobbyBeat();
+
+        this.bgmInterval1 = setInterval(playLobbyBeat, 3500);
+
+      }
+
+      // 인게임: 긴박하고 묵직한 타악기 중심의 드럼 루프 & 불안한 금관 톤
+
+      startBattleSynth() {
+
+        if (this.currentStyle === 'battle') return;
+
+        this.stopAllBgmIntervals();
+
+        this.currentStyle = 'battle';
+
+        const targetGain = this.activeBgmChannel === 1 ? this.bgmGain2 : this.bgmGain1;
+
+        const oldGain = this.activeBgmChannel === 1 ? this.bgmGain1 : this.bgmGain2;
+
+        this.activeBgmChannel = this.activeBgmChannel === 1 ? 2 : 1;
+
+        const now = this.ctx.currentTime;
+
+        oldGain.gain.linearRampToValueAtTime(0, now + 1.0);
+
+        targetGain.gain.setValueAtTime(0, now);
+
+        targetGain.gain.linearRampToValueAtTime(1.0, now + 1.0);
+
+        let beat = 0;
+
+        const playBattleBeat = () => {
+
+          if (this.currentStyle !== 'battle') return;
+
+          
+
+          const time = this.ctx.currentTime;
+
+          
+
+          // 1. 묵직한 드럼 쿵쿵 타악기 소리
+
+          if (beat % 2 === 0) {
+
+            const kickOsc = this.ctx.createOscillator();
+
+            const kickGain = this.ctx.createGain();
+
+            kickOsc.type = 'sine';
+
+            kickOsc.frequency.setValueAtTime(100, time);
+
+            kickOsc.frequency.exponentialRampToValueAtTime(20, time + 0.3);
+
+            
+
+            kickGain.gain.setValueAtTime(0.25, time);
+
+            kickGain.gain.linearRampToValueAtTime(0.0001, time + 0.35);
+
+            
+
+            kickOsc.connect(kickGain);
+
+            kickGain.connect(targetGain);
+
+            kickOsc.start(time);
+
+            kickOsc.stop(time + 0.4);
+
+          }
+
+          // 2. 일정한 주기로 울리는 불길한 퐁 소나 음계 (긴장 고조)
+
+          if (beat % 4 === 1 || beat % 4 === 3) {
+
+            const dangerOsc = this.ctx.createOscillator();
+
+            const dangerGain = this.ctx.createGain();
+
+            dangerOsc.type = 'sawtooth';
+
+            dangerOsc.frequency.setValueAtTime(beat % 4 === 1 ? 140 : 130, time);
+
+            
+
+            dangerGain.gain.setValueAtTime(0.001, time);
+
+            dangerGain.gain.linearRampToValueAtTime(0.04, time + 0.1);
+
+            dangerGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.5);
+
+            
+
+            dangerOsc.connect(dangerGain);
+
+            dangerGain.connect(targetGain);
+
+            dangerOsc.start(time);
+
+            dangerOsc.stop(time + 0.6);
+
+          }
+
+          beat++;
+
+        };
+
+        playBattleBeat();
+
+        this.bgmInterval2 = setInterval(playBattleBeat, 450); // 쿵쾅쿵쾅 빠른 박자
+
+      }
+
+      // 승리: 밝고 웅장하며 당당한 행진곡 톤 합성
+
+      playVictoryMusic() {
+
+        this.stopAllBgmIntervals();
+
+        this.currentStyle = 'victory';
+
+        const targetGain = this.activeBgmChannel === 1 ? this.bgmGain2 : this.bgmGain1;
+
+        const oldGain = this.activeBgmChannel === 1 ? this.bgmGain1 : this.bgmGain2;
+
+        this.activeBgmChannel = this.activeBgmChannel === 1 ? 2 : 1;
+
+        const now = this.ctx.currentTime;
+
+        oldGain.gain.linearRampToValueAtTime(0, now + 0.5);
+
+        targetGain.gain.setValueAtTime(0, now);
+
+        targetGain.gain.linearRampToValueAtTime(1.0, now + 0.5);
+
+        // 승리의 메이저 코드 시퀀스 연주
+
+        const notes = [261.63, 329.63, 392.00, 523.25, 392.00, 523.25, 659.25]; // C, E, G, C(high), G, C, E
+
+        const noteDuration = 0.3;
+
+        notes.forEach((freq, i) => {
+
+          const t = now + i * noteDuration;
+
+          const osc = this.ctx.createOscillator();
+
+          const osc2 = this.ctx.createOscillator(); // 화음 보정용
+
+          const gain = this.ctx.createGain();
+
+          osc.type = 'triangle';
+
+          osc.frequency.setValueAtTime(freq, t);
+
+          osc2.type = 'sine';
+
+          osc2.frequency.setValueAtTime(freq * 1.5, t); // 완전 5도 화음
+
+          gain.gain.setValueAtTime(0, t);
+
+          gain.gain.linearRampToValueAtTime(0.08, t + 0.05);
+
+          gain.gain.exponentialRampToValueAtTime(0.0001, t + noteDuration - 0.02);
+
+          osc.connect(gain);
+
+          osc2.connect(gain);
+
+          gain.connect(targetGain);
+
+          osc.start(t);
+
+          osc.stop(t + noteDuration);
+
+          osc2.start(t);
+
+          osc2.stop(t + noteDuration);
+
+        });
+
+      }
+
+      // 패배: 비극적이고 어둡고 무거운 마이너 장조 톤 합성
+
+      playDefeatMusic() {
+
+        this.stopAllBgmIntervals();
+
+        this.currentStyle = 'defeat';
+
+        const targetGain = this.activeBgmChannel === 1 ? this.bgmGain2 : this.bgmGain1;
+
+        const oldGain = this.activeBgmChannel === 1 ? this.bgmGain1 : this.bgmGain2;
+
+        this.activeBgmChannel = this.activeBgmChannel === 1 ? 2 : 1;
+
+        const now = this.ctx.currentTime;
+
+        oldGain.gain.linearRampToValueAtTime(0, now + 0.5);
+
+        targetGain.gain.setValueAtTime(0, now);
+
+        targetGain.gain.linearRampToValueAtTime(1.0, now + 0.5);
+
+        const notes = [196.00, 185.00, 174.61, 146.83, 110.00]; // G, F#, F, D, A (하강 비장미)
+
+        const noteDuration = 0.6;
+
+        notes.forEach((freq, i) => {
+
+          const t = now + i * noteDuration;
+
+          const osc = this.ctx.createOscillator();
+
+          const gain = this.ctx.createGain();
+
+          osc.type = 'sawtooth';
+
+          osc.frequency.setValueAtTime(freq, t);
+
+          gain.gain.setValueAtTime(0, t);
+
+          gain.gain.linearRampToValueAtTime(0.07, t + 0.1);
+
+          gain.gain.exponentialRampToValueAtTime(0.0001, t + noteDuration - 0.05);
+
+          osc.connect(gain);
+
+          gain.connect(targetGain);
+
+          osc.start(t);
+
+          osc.stop(t + noteDuration);
+
+        });
+
+      }
+
+      stopAllBgmIntervals() {
+
+        if (this.bgmInterval1) { clearInterval(this.bgmInterval1); this.bgmInterval1 = null; }
+
+        if (this.bgmInterval2) { clearInterval(this.bgmInterval2); this.bgmInterval2 = null; }
+
+      }
+
+      // ----------------------------------------------------
+
+      // 효과음 합성기 (SFX 파트)
+
+      // ----------------------------------------------------
+
+      // 1. 발포음 (포격 소리)
+
+      playFireSfx() {
+
+        if (!this.isPlaying || !this.ctx) return;
+
+        this.triggerDucking();
+
+        const now = this.ctx.currentTime;
+
+        const osc = this.ctx.createOscillator();
+
+        const noiseGain = this.ctx.createGain();
+
+        // 노이즈 필터링으로 더 화끈한 폭발 구현을 위한 오실레이터 주파수 하강
+
+        osc.type = 'sawtooth';
+
+        osc.frequency.setValueAtTime(320, now);
+
+        osc.frequency.exponentialRampToValueAtTime(10, now + 0.4);
+
+        noiseGain.gain.setValueAtTime(0.3, now);
+
+        noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+
+        osc.connect(noiseGain);
+
+        noiseGain.connect(this.sfxVolumeNode);
+
+        osc.start(now);
+
+        osc.stop(now + 0.5);
+
+      }
+
+      // 2. 적중/폭발음
+
+      playExplosionSfx() {
+
+        if (!this.isPlaying || !this.ctx) return;
+
+        this.triggerDucking();
+
+        const now = this.ctx.currentTime;
+
+        const osc = this.ctx.createOscillator();
+
+        const lowOsc = this.ctx.createOscillator();
+
+        const gainNode = this.ctx.createGain();
+
+        osc.type = 'sawtooth';
+
+        osc.frequency.setValueAtTime(250, now);
+
+        osc.frequency.exponentialRampToValueAtTime(1, now + 0.7);
+
+        lowOsc.type = 'triangle';
+
+        lowOsc.frequency.setValueAtTime(90, now);
+
+        lowOsc.frequency.exponentialRampToValueAtTime(20, now + 0.8);
+
+        gainNode.gain.setValueAtTime(0.5, now);
+
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.8);
+
+        osc.connect(gainNode);
+
+        lowOsc.connect(gainNode);
+
+        gainNode.connect(this.sfxVolumeNode);
+
+        osc.start(now);
+
+        osc.stop(now + 0.8);
+
+        lowOsc.start(now);
+
+        lowOsc.stop(now + 0.82);
+
+      }
+
+      // 3. 빗나감 (물보라 소리)
+
+      playSplashSfx() {
+
+        if (!this.isPlaying || !this.ctx) return;
+
+        const now = this.ctx.currentTime;
+
+        const osc = this.ctx.createOscillator();
+
+        const gainNode = this.ctx.createGain();
+
+        osc.type = 'sine';
+
+        osc.frequency.setValueAtTime(600, now);
+
+        osc.frequency.exponentialRampToValueAtTime(180, now + 0.35);
+
+        gainNode.gain.setValueAtTime(0.12, now);
+
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+
+        osc.connect(gainNode);
+
+        gainNode.connect(this.sfxVolumeNode);
+
+        osc.start(now);
+
+        osc.stop(now + 0.4);
+
+      }
+
+      // 4. 소나(Sonar) 핑 사운드 (레이더 발동 시)
+
+      playSonarSfx() {
+
+        if (!this.isPlaying || !this.ctx) return;
+
+        const now = this.ctx.currentTime;
+
+        const osc = this.ctx.createOscillator();
+
+        const gainNode = this.ctx.createGain();
+
+        osc.type = 'sine';
+
+        osc.frequency.setValueAtTime(950, now);
+
+        osc.frequency.setValueAtTime(950, now + 0.05);
+
+        osc.frequency.exponentialRampToValueAtTime(1400, now + 0.15); // 고음 팅~
+
+        gainNode.gain.setValueAtTime(0.001, now);
+
+        gainNode.gain.linearRampToValueAtTime(0.2, now + 0.05);
+
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 1.2); // 여운이 남음
+
+        osc.connect(gainNode);
+
+        gainNode.connect(this.sfxVolumeNode);
+
+        osc.start(now);
+
+        osc.stop(now + 1.3);
+
+      }
+
+      // 5. 어뢰 수중 기동음 (물살 가르는 소리)
+
+      playTorpedoLaunchSfx() {
+
+        if (!this.isPlaying || !this.ctx) return;
+
+        const now = this.ctx.currentTime;
+
+        const osc = this.ctx.createOscillator();
+
+        const gainNode = this.ctx.createGain();
+
+        osc.type = 'triangle';
+
+        osc.frequency.setValueAtTime(80, now);
+
+        // 고주파 떨림을 줘서 슈우우우- 하는 추진력 느낌을 살림
+
+        osc.frequency.linearRampToValueAtTime(350, now + 0.5);
+
+        gainNode.gain.setValueAtTime(0.25, now);
+
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+
+        osc.connect(gainNode);
+
+        gainNode.connect(this.sfxVolumeNode);
+
+        osc.start(now);
+
+        osc.stop(now + 0.6);
+
+      }
+
+    }
+
+    const audio = new SynthAudioManager();
+
+    // ==========================================
+
+    // 2. 게임 핵심 데이터 상태 및 클래스
+
+    // ==========================================
+
+    const GRID_SIZE = 4;
+
+    
+
+    // 게임 전역 상태 관리 객체
+
+    const gameState = {
+
+      isStarted: false,
+
+      isGameOver: false,
+
+      currentTurn: 'PLAYER', // 'PLAYER' | 'AI'
+
+      activeSkill: null, // null | 'RADAR' | 'TORPEDO'
+
+      
+
+      // 함선 배치 및 공격 로그 데이터 (0: 빈칸, 1: 함선 존재)
+
+      playerShips: Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(0)),
+
+      aiShips: Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(0)),
+
+      
+
+      // 공격 흔적 기록 (null: 미타격, 'HIT': 적중, 'MISS': 빗나감, 'DETECTED': 레이더 노출)
+
+      playerGridState: Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(null)),
+
+      aiGridState: Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(null)),
+
+      
+
+      // 스킬 잔여 개수
+
+      skills: {
+
+        radar: 1,
+
+        torpedo: 1
+
+      },
+
+      
+
+      // 함선 체력(격침 개수 확인용)
+
+      playerShipCount: 2,
+
+      aiShipCount: 2
+
+    };
+
+    // DOM 참조 모음
+
+    const lobbyPanel = document.getElementById('lobby-panel');
+
+    const gamePanel = document.getElementById('game-panel');
+
+    const gameoverPanel = document.getElementById('gameover-panel');
+
+    
+
+    const startBtn = document.getElementById('start-btn');
+
+    const restartBtn = document.getElementById('restart-btn');
+
+    const bgmToggleBtn = document.getElementById('bgm-toggle');
+
+    const bgmIcon = document.getElementById('bgm-icon');
+
+    const bgmStatusText = document.getElementById('bgm-status');
+
+    const turnBadge = document.getElementById('current-turn-badge');
+
+    const infoLog = document.getElementById('game-info-log');
+
+    
+
+    const pShipCountEl = document.getElementById('player-ship-count');
+
+    const aiShipCountEl = document.getElementById('ai-ship-count');
+
+    const playerHealthDots = document.getElementById('player-ships-health-dots');
+
+    const aiHealthDots = document.getElementById('ai-ships-health-dots');
+
+    
+
+    const skillRadarBtn = document.getElementById('skill-radar-btn');
+
+    const skillTorpedoBtn = document.getElementById('skill-torpedo-btn');
+
+    const radarCountEl = document.getElementById('radar-count');
+
+    const torpedoCountEl = document.getElementById('torpedo-count');
+
+    
+
+    const playerGridContainer = document.getElementById('player-grid-container');
+
+    const enemyGridContainer = document.getElementById('enemy-grid-container');
+
+    // ==========================================
+
+    // 3. UI 및 뷰 컨트롤 기능
+
+    // ==========================================
+
+    
+
+    // 격자 배치 렌더러
+
+    function initGridsUI() {
+
+      // 1. 플레이어 격자 생성 (아군 수비 전광판)
+
+      playerGridContainer.innerHTML = '';
+
+      for (let r = 0; r < GRID_SIZE; r++) {
+
+        for (let c = 0; c < GRID_SIZE; c++) {
+
+          const cell = document.createElement('div');
+
+          cell.dataset.row = r;
+
+          cell.dataset.col = c;
+
+          cell.className = "grid-cell bg-slate-950 border border-cyan-950/70 rounded-md flex items-center justify-center relative select-none font-bold text-lg overflow-hidden";
+
+          playerGridContainer.appendChild(cell);
+
+        }
+
+      }
+
+      // 2. 적군 격자 생성 (플레이어 조준 사격 타격판)
+
+      enemyGridContainer.innerHTML = '';
+
+      for (let r = 0; r < GRID_SIZE; r++) {
+
+        for (let c = 0; c < GRID_SIZE; c++) {
+
+          const cell = document.createElement('button');
+
+          cell.dataset.row = r;
+
+          cell.dataset.col = c;
+
+          cell.className = "grid-cell bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-md flex items-center justify-center relative select-none transition-all active:scale-95";
+
+          cell.addEventListener('click', () => handleEnemyCellClick(r, c));
+
+          enemyGridContainer.appendChild(cell);
+
+        }
+
+      }
+
+    }
+
+    // 데이터 상태에 따른 보드 격자 리프레시
+
+    function updateGridsUI() {
+
+      // 플레이어 보드 업데이트
+
+      for (let r = 0; r < GRID_SIZE; r++) {
+
+        for (let c = 0; c < GRID_SIZE; c++) {
+
+          const cell = playerGridContainer.querySelector(`[data-row='${r}'][data-col='${c}']`);
+
+          const hasShip = gameState.playerShips[r][c] === 1;
+
+          const hitState = gameState.playerGridState[r][c];
+
+          // 셀 내부 초기화
+
+          cell.innerHTML = '';
+
+          cell.className = "grid-cell border rounded-md flex items-center justify-center relative select-none font-bold text-lg overflow-hidden";
+
+          if (hitState === 'HIT') {
+
+            cell.className += " border-red-500 bg-red-950 text-red-400 cell-hit";
+
+            cell.innerHTML = `<i class="fa-solid fa-burst text-xl animate-bounce"></i>`;
+
+          } else if (hitState === 'MISS') {
+
+            cell.className += " border-slate-700 bg-slate-800 text-slate-500";
+
+            cell.innerHTML = `<i class="fa-solid fa-circle text-[8px]"></i>`;
+
+          } else {
+
+            // 미타격 상태
+
+            if (hasShip) {
+
+              cell.className += " border-cyan-800 bg-slate-900/90 text-cyan-400";
+
+              cell.innerHTML = `<i class="fa-solid fa-ship text-sm animate-pulse"></i>`;
+
+            } else {
+
+              cell.className += " border-cyan-950/40 bg-slate-950 hover:bg-slate-900/60 text-slate-700";
+
+            }
+
+          }
+
+        }
+
+      }
+
+      // 적군 보드 업데이트
+
+      for (let r = 0; r < GRID_SIZE; r++) {
+
+        for (let c = 0; c < GRID_SIZE; c++) {
+
+          const cell = enemyGridContainer.querySelector(`[data-row='${r}'][data-col='${c}']`);
+
+          const hitState = gameState.aiGridState[r][c];
+
+          cell.innerHTML = '';
+
+          cell.className = "grid-cell border rounded-md flex items-center justify-center relative select-none transition-all";
+
+          if (hitState === 'HIT') {
+
+            cell.className += " border-red-500 bg-red-950 text-red-500 cell-hit cursor-default";
+
+            cell.innerHTML = `<i class="fa-solid fa-explosion text-xl"></i>`;
+
+          } else if (hitState === 'MISS') {
+
+            cell.className += " border-slate-800 bg-slate-900/80 text-slate-600 cursor-default";
+
+            cell.innerHTML = `<i class="fa-solid fa-droplet text-xs"></i>`;
+
+          } else if (hitState === 'DETECTED') {
+
+            // 레이더에 적이 탐색된 적 함선 유무 표시 (데미지 없음)
+
+            cell.className += " border-emerald-500 bg-emerald-950/40 text-emerald-400 animate-pulse";
+
+            cell.innerHTML = `<i class="fa-solid fa-satellite-dish text-xs"></i>`;
+
+          } else {
+
+            // 아직 공격하지 않은 상태
+
+            cell.className += " border-slate-800 bg-slate-950 hover:bg-slate-900 text-slate-700 cursor-pointer active:scale-95";
+
+          }
+
+        }
+
+      }
+
+      // UI 헤더 및 라벨 데이터 최신화
+
+      pShipCountEl.textContent = gameState.playerShipCount;
+
+      aiShipCountEl.textContent = gameState.aiShipCount;
+
+      
+
+      // 하트/체력 도트 UI 갱신
+
+      playerHealthDots.innerHTML = '';
+
+      for (let i = 0; i < 2; i++) {
+
+        const dot = document.createElement('span');
+
+        dot.className = `w-3 h-3 rounded-full ${i < gameState.playerShipCount ? 'bg-cyan-400 shadow-md shadow-cyan-500/50' : 'bg-slate-800'}`;
+
+        playerHealthDots.appendChild(dot);
+
+      }
+
+      
+
+      aiHealthDots.innerHTML = '';
+
+      for (let i = 0; i < 2; i++) {
+
+        const dot = document.createElement('span');
+
+        dot.className = `w-3 h-3 rounded-full ${i < gameState.aiShipCount ? 'bg-rose-500 shadow-md shadow-rose-500/50' : 'bg-slate-800'}`;
+
+        aiHealthDots.appendChild(dot);
+
+      }
+
+      // 스킬 카운트 및 활성화 보더 갱신
+
+      radarCountEl.textContent = gameState.skills.radar;
+
+      torpedoCountEl.textContent = gameState.skills.torpedo;
+
+      if (gameState.skills.radar <= 0) {
+
+        skillRadarBtn.disabled = true;
+
+        skillRadarBtn.className = "py-2 px-4 rounded bg-slate-950 border border-slate-900 text-slate-600 text-xs font-bold cursor-not-allowed opacity-50 flex items-center gap-2";
+
+      } else if (gameState.activeSkill === 'RADAR') {
+
+        skillRadarBtn.className = "py-2 px-4 rounded bg-emerald-950 border-2 border-emerald-400 text-emerald-400 text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-900/40 animate-pulse";
+
+      } else {
+
+        skillRadarBtn.className = "py-2 px-4 rounded bg-slate-900 border border-slate-700 hover:border-emerald-500 hover:bg-emerald-950/20 text-slate-300 hover:text-emerald-400 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer";
+
+      }
+
+      if (gameState.skills.torpedo <= 0) {
+
+        skillTorpedoBtn.disabled = true;
+
+        skillTorpedoBtn.className = "py-2 px-4 rounded bg-slate-950 border border-slate-900 text-slate-600 text-xs font-bold cursor-not-allowed opacity-50 flex items-center gap-2";
+
+      } else if (gameState.activeSkill === 'TORPEDO') {
+
+        skillTorpedoBtn.className = "py-2 px-4 rounded bg-rose-950 border-2 border-rose-500 text-rose-400 text-xs font-bold flex items-center gap-2 shadow-lg shadow-rose-950/50 animate-pulse";
+
+      } else {
+
+        skillTorpedoBtn.className = "py-2 px-4 rounded bg-slate-900 border border-slate-700 hover:border-rose-500 hover:bg-rose-950/20 text-slate-300 hover:text-rose-400 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer";
+
+      }
+
+    }
+
+    // 턴 제어 표시 변경
+
+    function updateTurnBadge() {
+
+      if (gameState.isGameOver) {
+
+        turnBadge.textContent = "FINISHED";
+
+        turnBadge.className = "font-digital text-sm font-bold text-amber-500 px-2 py-0.5 bg-amber-950/40 border border-amber-900/50 rounded";
+
+        return;
+
+      }
+
+      
+
+      if (gameState.currentTurn === 'PLAYER') {
+
+        turnBadge.textContent = "PLAYER TURN";
+
+        turnBadge.className = "font-digital text-sm font-bold text-cyan-400 px-2 py-0.5 bg-cyan-950/40 border border-cyan-900/50 rounded animate-pulse";
+
+      } else {
+
+        turnBadge.textContent = "AI ANALYZING";
+
+        turnBadge.className = "font-digital text-sm font-bold text-rose-500 px-2 py-0.5 bg-rose-950/40 border border-rose-900/50 rounded";
+
+      }
+
+    }
+
+    // 전술 메시지 콘솔 로깅
+
+    function writeLog(message, isAlert = false) {
+
+      infoLog.textContent = message;
+
+      if (isAlert) {
+
+        infoLog.className = "text-xs text-rose-400 font-bold animate-bounce";
+
+      } else {
+
+        infoLog.className = "text-xs text-cyan-300 font-medium";
+
+      }
+
+    }
+
+    // ==========================================
+
+    // 4. 게임 핵심 매커니즘 & 로직 구현
+
+    // ==========================================
+
+    // 무작위 군함 2척 자동 임의 배치 함수
+
+    function placeShipsRandomly(grid) {
+
+      // 보드 비우기
+
+      for (let r = 0; r < GRID_SIZE; r++) {
+
+        for (let c = 0; c < GRID_SIZE; c++) {
+
+          grid[r][c] = 0;
+
+        }
+
+      }
+
+      
+
+      let shipsPlaced = 0;
+
+      while (shipsPlaced < 2) {
+
+        const randRow = Math.floor(Math.random() * GRID_SIZE);
+
+        const randCol = Math.floor(Math.random() * GRID_SIZE);
+
+        if (grid[randRow][randCol] === 0) {
+
+          grid[randRow][randCol] = 1;
+
+          shipsPlaced++;
+
+        }
+
+      }
+
+    }
+
+    // 게임 시작 및 세션 초기화
+
+    function startNewGame() {
+
+      audio.init(); // 브라우저 제약 상 첫 유저 액션에서 실행되도록 연동
+
+      
+
+      // 1. 상태 변수 리셋
+
+      gameState.isStarted = true;
+
+      gameState.isGameOver = false;
+
+      gameState.currentTurn = 'PLAYER';
+
+      gameState.activeSkill = null;
+
+      gameState.skills.radar = 1;
+
+      gameState.skills.torpedo = 1;
+
+      gameState.playerShipCount = 2;
+
+      gameState.aiShipCount = 2;
+
+      // 2. 격자 상태판 초기화
+
+      for (let r = 0; r < GRID_SIZE; r++) {
+
+        for (let c = 0; c < GRID_SIZE; c++) {
+
+          gameState.playerGridState[r][c] = null;
+
+          gameState.aiGridState[r][c] = null;
+
+        }
+
+      }
+
+      // 3. 군함 배치
+
+      placeShipsRandomly(gameState.playerShips);
+
+      placeShipsRandomly(gameState.aiShips);
+
+      // 4. 판넬 교체 연출
+
+      lobbyPanel.classList.add('hidden');
+
+      gameoverPanel.classList.add('hidden');
+
+      gamePanel.classList.remove('hidden');
+
+      // 5. 오디오 웅장한 전투 테마곡 시작
+
+      audio.startBattleSynth();
+
+      // 6. UI 그리기
+
+      initGridsUI();
+
+      updateGridsUI();
+
+      updateTurnBadge();
+
+      writeLog("안개 속 적 해역을 공격하거나, 전술 스킬(레이더/어뢰)을 발동하십시오.");
+
+    }
+
+    // 플레이어가 타격 좌표(적 바다)를 클릭했을 때
+
+    function handleEnemyCellClick(row, col) {
+
+      if (!gameState.isStarted || gameState.isGameOver) return;
+
+      if (gameState.currentTurn !== 'PLAYER') return;
+
+      const currentState = gameState.aiGridState[row][col];
+
+      // 1. 레이더 스킬 발동 시
+
+      if (gameState.activeSkill === 'RADAR') {
+
+        useRadarSkill(row, col);
+
+        return;
+
+      }
+
+      // 2. 어뢰 폭격 스킬 발동 시
+
+      if (gameState.activeSkill === 'TORPEDO') {
+
+        useTorpedoSkill(row); // 행 단위 폭격
+
+        return;
+
+      }
+
+      // 3. 일반 공격 프로세스
+
+      // 이미 공격 완료된 곳은 재클릭 불가능
+
+      if (currentState === 'HIT' || currentState === 'MISS') {
+
+        writeLog("이미 포격을 완수한 안전한 좌표입니다. 다른 곳을 조준하십시오.", true);
+
+        return;
+
+      }
+
+      executePlayerAttack(row, col);
+
+    }
+
+    // 일반 사격 실행
+
+    function executePlayerAttack(row, col) {
+
+      // 발포 이펙트 사운드
+
+      audio.playFireSfx();
+
+      
+
+      const isHit = gameState.aiShips[row][col] === 1;
+
+      setTimeout(() => {
+
+        if (isHit) {
+
+          gameState.aiGridState[row][col] = 'HIT';
+
+          audio.playExplosionSfx();
+
+          // 적 체력 차감
+
+          let remainingShips = countRemainingShips(gameState.aiShips, gameState.aiGridState);
+
+          gameState.aiShipCount = remainingShips;
+
+          writeLog(`포격 명중! [행 ${row + 1}, 열 ${col + 1}] 좌표의 적함이 손상되었습니다!`);
+
+        } else {
+
+          gameState.aiGridState[row][col] = 'MISS';
+
+          audio.playSplashSfx();
+
+          writeLog(`탄착 실패... 물보라만 피어오릅니다. [행 ${row + 1}, 열 ${col + 1}]`);
+
+        }
+
+        updateGridsUI();
+
+        
+
+        // 승리 여부 검사
+
+        if (checkGameOver()) return;
+
+        // 턴 전환
+
+        gameState.currentTurn = 'AI';
+
+        updateTurnBadge();
+
+        
+
+        // AI 자동 역습 예약
+
+        setTimeout(executeAiAttack, 1500);
+
+      }, 300);
+
+    }
+
+    // 남은 함선 실시간 측정
+
+    function countRemainingShips(shipsGrid, hitGrid) {
+
+      let count = 0;
+
+      for (let r = 0; r < GRID_SIZE; r++) {
+
+        for (let c = 0; c < GRID_SIZE; c++) {
+
+          if (shipsGrid[r][c] === 1 && hitGrid[r][c] !== 'HIT') {
+
+            count++;
+
+          }
+
+        }
+
+      }
+
+      return count;
+
+    }
+
+    // ==========================================
+
+    // 5. 전술 스킬 로직 구현
+
+    // ==========================================
+
+    // 레이더 정찰 스킬
+
+    function useRadarSkill(row, col) {
+
+      if (gameState.skills.radar <= 0) return;
+
+      
+
+      gameState.skills.radar--;
+
+      gameState.activeSkill = null; // 스킬 사용 상태 비활성화
+
+      audio.playSonarSfx();
+
+      // 십자(+) 방향 5칸 탐색: (row, col) 및 인접 상하좌우 4방향
+
+      const scanCoords = [
+
+        [row, col],
+
+        [row - 1, col],
+
+        [row + 1, col],
+
+        [row, col - 1],
+
+        [row, col + 1]
+
+      ];
+
+      let foundEnemy = false;
+
+      // 탐지 범위 시각 연출을 위한 가상 애니메이션
+
+      scanCoords.forEach(([r, c]) => {
+
+        if (r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE) {
+
+          const targetCell = enemyGridContainer.querySelector(`[data-row='${r}'][data-col='${c}']`);
+
+          
+
+          // 임시 녹색 소나 레이더 탐지 효과 주기
+
+          targetCell.classList.add('bg-emerald-950/80', 'border-emerald-400');
+
+          setTimeout(() => {
+
+            targetCell.classList.remove('bg-emerald-950/80', 'border-emerald-400');
+
+          }, 1200);
+
+          if (gameState.aiShips[r][c] === 1) {
+
+            foundEnemy = true;
+
+            // 이미 격침되지 않은 함선이 발견되면 그 위치를 맵에 레이더 마킹
+
+            if (gameState.aiGridState[r][c] === null) {
+
+              gameState.aiGridState[r][c] = 'DETECTED';
+
+            }
+
+          }
+
+        }
+
+      });
+
+      if (foundEnemy) {
+
+        writeLog("소나 탐지 성공! 근방 해역에 정체불명의 선체 반응이 포착되었습니다!");
+
+      } else {
+
+        writeLog("해역 정찰 결과, 탐색 지역 내 군함 반응이 없습니다.");
+
+      }
+
+      // 레이더 스킬은 턴을 소모하지 않음 (플레이어 턴 유지)
+
+      updateGridsUI();
+
+      updateTurnBadge();
+
+    }
+
+    // 어뢰 행 폭격 스킬
+
+    function useTorpedoSkill(row) {
+
+      if (gameState.skills.torpedo <= 0) return;
+
+      gameState.skills.torpedo--;
+
+      gameState.activeSkill = null;
+
+      audio.playTorpedoLaunchSfx();
+
+      writeLog(`지정된 가로 행[${row + 1}행] 전체에 다연장 중어뢰 격발을 실시합니다!`);
+
+      // 가로 행 전체 4칸을 0.2초 간격으로 순차적 포격 타격 연출
+
+      let c = 0;
+
+      const interval = setInterval(() => {
+
+        if (c >= GRID_SIZE) {
+
+          clearInterval(interval);
+
+          
+
+          // 전 탄 폭격 완료 후 승리 조건 검사 및 적 턴으로 전환
+
+          updateGridsUI();
+
+          if (checkGameOver()) return;
+
+          gameState.currentTurn = 'AI';
+
+          updateTurnBadge();
+
+          setTimeout(executeAiAttack, 1500);
+
+          return;
+
+        }
+
+        const isHit = gameState.aiShips[row][c] === 1;
+
+        
+
+        // 기존 타격 흔적이 없는 경우에만 판정
+
+        if (gameState.aiGridState[row][c] !== 'HIT') {
+
+          if (isHit) {
+
+            gameState.aiGridState[row][c] = 'HIT';
+
+            audio.playExplosionSfx();
+
+            gameState.aiShipCount = countRemainingShips(gameState.aiShips, gameState.aiGridState);
+
+          } else {
+
+            gameState.aiGridState[row][c] = 'MISS';
+
+            audio.playSplashSfx();
+
+          }
+
+        }
+
+        updateGridsUI();
+
+        c++;
+
+      }, 250);
+
+    }
+
+    // ==========================================
+
+    // 6. 무작위 타격 AI 스크립트 작성
+
+    // ==========================================
+
+    function executeAiAttack() {
+
+      if (gameState.isGameOver || !gameState.isStarted) return;
+
+      writeLog("적 군함이 포신을 조정하며 조준점을 수색하고 있습니다...");
+
+      // 1. 공격 대상 격자 선정 (플레이어가 포격을 당하지 않은 미공격 지역 수집)
+
+      const possibleTargets = [];
+
+      for (let r = 0; r < GRID_SIZE; r++) {
+
+        for (let c = 0; c < GRID_SIZE; c++) {
+
+          if (gameState.playerGridState[r][c] === null) {
+
+            possibleTargets.push({ row: r, col: c });
+
+          }
+
+        }
+
+      }
+
+      // 사격할 타겟이 전혀 없다면 중단 (논리 상 존재하지 않음)
+
+      if (possibleTargets.length === 0) return;
+
+      // 2. 무작위 목표 선정
+
+      const randomIndex = Math.floor(Math.random() * possibleTargets.length);
+
+      const target = possibleTargets[randomIndex];
+
+      // 포격 연출
+
+      audio.playFireSfx();
+
+      setTimeout(() => {
+
+        const isHit = gameState.playerShips[target.row][target.col] === 1;
+
+        if (isHit) {
+
+          gameState.playerGridState[target.row][target.col] = 'HIT';
+
+          audio.playExplosionSfx();
+
+          
+
+          gameState.playerShipCount = countRemainingShips(gameState.playerShips, gameState.playerGridState);
+
+          writeLog(`[경고] 아군 전함이 피격당했습니다! 위치: [행 ${target.row + 1}, 열 ${target.col + 1}]`, true);
+
+        } else {
+
+          gameState.playerGridState[target.row][target.col] = 'MISS';
+
+          audio.playSplashSfx();
+
+          writeLog(`휴... 적 포격이 빗나갔습니다. 위치: [행 ${target.row + 1}, 열 ${target.col + 1}]`);
+
+        }
+
+        updateGridsUI();
+
+        if (checkGameOver()) return;
+
+        // 턴 반환
+
+        gameState.currentTurn = 'PLAYER';
+
+        updateTurnBadge();
+
+      }, 300);
+
+    }
+
+    // ==========================================
+
+    // 7. 게임 승패 조건 검사 및 씬 전환
+
+    // ==========================================
+
+    function checkGameOver() {
+
+      // 플레이어 생존선이 0인 경우 패배
+
+      if (gameState.playerShipCount === 0) {
+
+        endGame(false);
+
+        return true;
+
+      }
+
+      // AI 생존선이 0인 경우 승리
+
+      if (gameState.aiShipCount === 0) {
+
+        endGame(true);
+
+        return true;
+
+      }
+
+      return false;
+
+    }
+
+    // 게임 종료 처리
+
+    function endGame(isPlayerVictory) {
+
+      gameState.isGameOver = true;
+
+      gameState.isStarted = false;
+
+      
+
+      updateTurnBadge();
+
+      gamePanel.classList.add('hidden');
+
+      gameoverPanel.classList.remove('hidden');
+
+      const iconBox = document.getElementById('gameover-icon-box');
+
+      const title = document.getElementById('gameover-title');
+
+      const desc = document.getElementById('gameover-desc');
+
+      if (isPlayerVictory) {
+
+        // 승리
+
+        iconBox.innerHTML = `<i class="fa-solid fa-trophy text-amber-400"></i>`;
+
+        iconBox.className = "w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl bg-amber-950 border border-amber-600 animate-bounce";
+
+        title.textContent = "VICTORY";
+
+        title.className = "text-3xl font-black font-digital tracking-wide text-amber-400";
+
+        desc.textContent = "함대의 우수한 작전 지휘력 덕분에 적 함대를 무력화하고 영해를 온전히 수호하였습니다. 장군, 축하합니다!";
+
+        audio.playVictoryMusic();
+
+      } else {
+
+        // 패배
+
+        iconBox.innerHTML = `<i class="fa-solid fa-skull-crossbones text-rose-500"></i>`;
+
+        iconBox.className = "w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl bg-rose-950 border border-rose-800 animate-pulse";
+
+        title.textContent = "DEFEAT";
+
+        title.className = "text-3xl font-black font-digital tracking-wide text-rose-500";
+
+        desc.textContent = "아군 함대가 모두 격추되었습니다. 기지를 철수하고 후방으로 철수해 전력을 복구해야 합니다.";
+
+        audio.playDefeatMusic();
+
+      }
+
+    }
+
+    // ==========================================
+
+    // 8. 이벤트 바인딩 & 초기화 등록
+
+    // ==========================================
+
+    // 게임 시작 버튼
+
+    startBtn.addEventListener('click', () => {
+
+      startNewGame();
+
+    });
+
+    // 재도전 버튼
+
+    restartBtn.addEventListener('click', () => {
+
+      startNewGame();
+
+    });
+
+    // 레이더 스킬 선택 토글
+
+    skillRadarBtn.addEventListener('click', () => {
+
+      if (gameState.skills.radar <= 0) return;
+
+      
+
+      if (gameState.activeSkill === 'RADAR') {
+
+        gameState.activeSkill = null;
+
+        writeLog("레이더 작동 대기상태가 취소되었습니다.");
+
+      } else {
+
+        gameState.activeSkill = 'RADAR';
+
+        writeLog("레이더 정찰 모드 활성화: 스캔할 적 해역 한 칸을 선택하십시오. (주변 십자구역 탐지)");
+
+      }
+
+      updateGridsUI();
+
+    });
+
+    // 어뢰 스킬 선택 토글
+
+    skillTorpedoBtn.addEventListener('click', () => {
+
+      if (gameState.skills.torpedo <= 0) return;
+
+      if (gameState.activeSkill === 'TORPEDO') {
+
+        gameState.activeSkill = null;
+
+        writeLog("어뢰 조준 모드가 취소되었습니다.");
+
+      } else {
+
+        gameState.activeSkill = 'TORPEDO';
+
+        writeLog("다연장 어뢰 격발 활성화: 폭격을 가할 가로 행(Row) 중 한 칸을 지목하십시오.");
+
+      }
+
+      updateGridsUI();
+
+    });
+
+    // BGM 오디오 토글/음소거 기능
+
+    bgmToggleBtn.addEventListener('click', () => {
+
+      if (!audio.ctx) {
+
+        audio.init();
+
+        audio.startLobbySynth();
+
+        bgmIcon.className = "fa-solid fa-volume-high text-cyan-400";
+
+        bgmStatusText.textContent = "오디오 작동 중";
+
+        return;
+
+      }
+
+      if (audio.isPlaying) {
+
+        audio.isPlaying = false;
+
+        audio.masterVolume.gain.setValueAtTime(0, audio.ctx.currentTime);
+
+        bgmIcon.className = "fa-solid fa-volume-xmark text-slate-500";
+
+        bgmStatusText.textContent = "음소거 상태";
+
+      } else {
+
+        audio.isPlaying = true;
+
+        audio.masterVolume.gain.setValueAtTime(0.4, audio.ctx.currentTime);
+
+        bgmIcon.className = "fa-solid fa-volume-high text-cyan-400";
+
+        bgmStatusText.textContent = "오디오 작동 중";
+
+      }
+
+    });
+
+    // 최초 로드 시 로비 사운드 활성화 대비
+
+    window.onload = () => {
+
+      // 사용자가 최초 상호작용하기 전까지는 웹브라우저 오디오 보호 정책 상 재생이 중단되므로 안내 유도
+
+      writeLog("LOBBY: 전투 개시 전 시스템 점검 단계입니다.");
+
+    };
+
+  </script>
+
+</body>
+
+</html>
